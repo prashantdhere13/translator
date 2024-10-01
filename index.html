@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="shortcut icon" href=""> <!-- insert Zee logo-->
+    <title>Zee International Metadata file translator</title>
+    <link href="style1.css" rel="stylesheet" type="text/css">
+</head>
+
+<body>
+    <input type="file" id="fileInput">
+    <select id="startAssetIdSelect" onchange="updateEndAssetIdOptions()">
+        <option value="">Select Start Asset ID</option>
+    </select>
+    <select id="endAssetIdSelect">
+        <option value="">Select End Asset ID</option>
+    </select>
+
+    <!-- Language Selection for Translation -->
+    <select id="languageSelect" onchange="handleLanguageChange()">
+        <option value="en">English</option>
+        <option value="es">Spanish</option>
+        <option value="fr">French</option>
+        <option value="ar">Arabic</option>
+        <option value="th">Thai</option>
+        <option value="tl">Filipino</option>
+        <!-- Add more languages as needed -->
+    </select>
+
+    <button onclick="handleFile()">Process File</button>
+    <button onclick="downloadFile()">Download File</button>
+
+    <div id="tablesContainer"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.16.9/xlsx.full.min.js"></script>
+    <script>
+        let sortedAssetIds = [];
+        const API_KEY = 'AIzaSyDcUXTSD2yBBc9lS2u06f-V0c2hPp9btLg'; // Add your API key here
+
+        function handleFile() {
+            const fileInput = document.getElementById('fileInput');
+            const startAssetId = document.getElementById('startAssetIdSelect').value;
+            const endAssetId = document.getElementById('endAssetIdSelect').value;
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            reader.onload = function (e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+
+                workbook.SheetNames.forEach(sheetName => {
+                    const worksheet = workbook.Sheets[sheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+                    const filteredData = jsonData.filter((row, index) => {
+                        if (index === 0) return false; // skip header row
+                        const assetID = row[0];
+                        return (!startAssetId || assetID >= startAssetId) &&
+                            (!endAssetId || assetID <= endAssetId);
+                    });
+
+                    // Translation Logic
+                    const language = document.getElementById('languageSelect').value;
+                    translateData(filteredData, language).then(translatedData => {
+                        populateTable(translatedData);
+                        createJsonData(translatedData);
+                    });
+                });
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+
+        function handleLanguageChange() {
+            const language = document.getElementById('languageSelect').value;
+            const tablesContainer = document.getElementById('tablesContainer');
+
+            if (language === 'ar') {
+                // Add 'rtl' class to table cells for Arabic
+                tablesContainer.querySelectorAll('td, th').forEach(cell => {
+                    cell.classList.remove('ltr');
+                    cell.classList.add('rtl');
+                });
+            } else {
+                // Add 'ltr' class to table cells for other languages
+                tablesContainer.querySelectorAll('td, th').forEach(cell => {
+                    cell.classList.remove('rtl');
+                    cell.classList.add('ltr');
+                });
+            }
+        }
+
+
+
+        async function translateData(data, language) {
+            const translatedData = await Promise.all(data.map(async (row) => {
+                const title = row[2];
+                const description = row[3];
+
+                const translatedTitle = await translateText(title, language);
+                const translatedDescription = await translateText(description, language);
+
+                return [
+                    row[0], translatedTitle, translatedDescription, // Add translations
+                    ...row.slice(4) // Keep the rest of the columns as is
+                ];
+            }));
+            return translatedData;
+        }
+
+        async function translateText(text, language) {
+            if (!text) return '';
+
+            const response = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${API_KEY}`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    q: text,
+                    target: language
+                }),
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            const data = await response.json();
+            if (data.error) {
+                console.error("Translation API Error:", data.error.message);
+                return text; // If error, return original text
+            }
+
+            return data.data.translations[0].translatedText;
+        }
+        // Function to format date as DD-MM-YYYY
+        function formatDate(dateString) {
+            if (!dateString) return '';
+            const date = new Date(dateString);
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0'); // Months are zero-based
+            const year = date.getFullYear();
+            return `${day}-${month}-${year}`;
+        }
+
+        // Translate data and populate table with date format conversion
+        async function translateData(data, language) {
+            const translatedData = await Promise.all(data.map(async (row) => {
+                const title = row[1];
+                const description = row[2];
+                const long_description = row[3];
+                const series_title = row[18];
+                const series_id = row[19];
+                const series_description = row[21];
+
+
+                const translatedTitle = await translateText(title, language);
+                const translatedDescription = await translateText(description, language);
+                const translatedLongdescription = await translateText(long_description, language);
+                const translatedSeriestitle = await translateText(series_title, language);
+                const translatedSeriesid = await translateText(series_id, language);
+                const translatedSeriesdescription = await translateText(series_description, language)
+
+                // Format date columns to DD-MM-YYYY
+                const formattedReleaseDate = formatDate(row[15]); // Release Date
+                const formattedLicenseStart = formatDate(row[16]); // License Start
+                const formattedLicenseEnd = formatDate(row[17]); // License End
+                const formattedseriesReleaseDate = formatDate(row[23]); // Series Release Date
+                return [
+                    row[0], translatedTitle, translatedDescription, translatedLongdescription, // Translated title and description
+                    ...row.slice(4, 15), // Keep other columns as is
+                    formattedReleaseDate, // Release Date in DD-MM-YYYY format
+                    formattedLicenseStart, // License Start in DD-MM-YYYY format
+                    formattedLicenseEnd, // License End in DD-MM-YYYY format
+                    translatedSeriestitle,
+                    translatedSeriesid,
+                    row[20],
+                    translatedSeriesdescription,
+                    row[22],
+                    formattedseriesReleaseDate,
+                    ...row.slice(24) // Rest of the columns as is
+
+                ];
+            }));
+            return translatedData;
+        }
+
+        function populateTable(data) {
+            const tablesContainer = document.getElementById('tablesContainer');
+            tablesContainer.innerHTML = ''; // Clear any existing tables
+
+            const table = document.createElement('table');
+            table.id = 'dataTable';
+            const tableHeader = `<thead>
+            <tr>
+                <th>Asset ID</th>
+                <th>Title</th>
+                <th>description</th>
+                <th>long_description</th>
+                <th>tags</th>
+                <th>genre</th>
+                <th>cast</th>
+                <th>director</th>
+                <th>season</th>
+                <th>episode</th>
+                <th>rating</th>
+                <th>rating_body</th>
+                <th>TC IN</th>
+                <th>duration</th>
+                <th>tms_id</th>
+                <th>release_date</th> <!-- Modified to indicate DD-MM-YYYY format -->
+                <th>license_start</th> <!-- Modified to indicate DD-MM-YYYY format -->
+                <th>license_end</th> <!-- Modified to indicate DD-MM-YYYY format -->
+                <th>series_title</th>
+                <th>series_id</th>
+                <th>series_tms_id</th>
+                <th>series_description</th>
+                <th>series_genre</th>
+                <th>series_release_date</th>
+                <th>series_tags</th>
+                <th>Type</th>
+                <th>subtitle_url</th>
+                <th>trailer_url</th>
+                <th>video_url</th>
+                <th>series_thumbnail_url</th>
+                <th>series_portrait_poster_url</th>
+                <th>series_landscape_poster_url</th>
+                <th>thumbnail_url</th>
+                <th>portrait_poster_url</th>
+                <th>landscape_poster_url</th>
+                <th>Cue Points</th>
+                <th>Segments</th>
+                <th>Language</th>
+                <th>GUID</th>
+                <th>Platforms</th>
+            </tr>
+        </thead>`;
+            table.innerHTML = tableHeader;
+            const tableBody = document.createElement('tbody');
+
+            data.forEach((rowData) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                <td>${rowData[0] || ''}</td>
+                <td>${rowData[1] || ''}</td>
+                <td>${rowData[2] || ''}</td>
+                <td>${rowData[3] || ''}</td>
+                <td>${rowData[4] || ''}</td>
+                <td>${rowData[5] || ''}</td>
+                <td>${rowData[6] || ''}</td>
+                <td>${rowData[7] || ''}</td>
+                <td>${rowData[8] || ''}</td>
+                <td>${rowData[9] || ''}</td>
+                <td>${rowData[10] || ''}</td>
+                <td>${rowData[11] || ''}</td>
+                <td>${rowData[12] || ''}</td>
+                <td>${rowData[13] || ''}</td>
+                <td>${rowData[14] || ''}</td>
+                <td>${rowData[15] || ''}</td> <!-- Release Date in DD-MM-YYYY format -->
+                <td>${rowData[16] || ''}</td> <!-- License Start in DD-MM-YYYY format -->
+                <td>${rowData[17] || ''}</td> <!-- License End in DD-MM-YYYY format -->
+                <td>${rowData[18] || ''}</td>
+                <td>${rowData[19] || ''}</td>
+                <td>${rowData[20] || ''}</td>
+                <td>${rowData[21] || ''}</td>
+                <td>${rowData[22] || ''}</td>
+                <td>${rowData[23] || ''}</td>
+                <td>${rowData[24] || ''}</td>
+                <td>${rowData[25] || ''}</td>
+                <td>${rowData[26] || ''}</td>
+                <td>${rowData[27] || ''}</td>
+                <td>${rowData[28] || ''}</td>
+                <td>${rowData[29] || ''}</td>
+                <td>${rowData[30] || ''}</td>
+                <td>${rowData[31] || ''}</td>
+                <td>${rowData[32] || ''}</td>
+                <td>${rowData[33] || ''}</td>
+                <td>${rowData[34] || ''}</td>
+                <td>${rowData[35] || ''}</td>
+                <td>${rowData[36] || ''}</td>
+                <td>${rowData[37] || ''}</td>
+                <td>${rowData[38] || ''}</td>
+                <td>${rowData[39] || ''}</td>
+                <td>${rowData[40] || ''}</td>
+            `;
+                tableBody.appendChild(row);
+            });
+
+            table.appendChild(tableBody);
+            tablesContainer.appendChild(table);
+        }
+        function downloadFile() {
+            const table = document.getElementById('dataTable');
+            let csvContent = '';
+
+            const rows = table.querySelectorAll('tr');
+            rows.forEach(row => {
+                const cols = row.querySelectorAll('td, th');
+                const rowData = Array.from(cols).map(col => `"${col.textContent.replace(/"/g, '""')}"`);
+                csvContent += rowData.join(',') + '\n';
+            });
+
+            const blob = new Blob([`\ufeff${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('href', url);
+            a.setAttribute('download', 'data.csv');
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        document.getElementById('fileInput').addEventListener('change', function () {
+            const file = this.files[0];
+            const reader = new FileReader();
+
+            reader.onload = function (e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+
+                workbook.SheetNames.forEach(sheetName => {
+                    const worksheet = workbook.Sheets[sheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+                    const assetIds = new Set();
+                    jsonData.forEach((row, index) => {
+                        if (index !== 0) { // Skip header row
+                            assetIds.add(row[0]);
+                        }
+                    });
+
+                    sortedAssetIds = Array.from(assetIds).sort();
+                    populateDropdowns();
+                });
+            };
+
+            reader.readAsArrayBuffer(file);
+        });
+
+        function populateDropdowns() {
+            const startAssetIdSelect = document.getElementById('startAssetIdSelect');
+            const endAssetIdSelect = document.getElementById('endAssetIdSelect');
+
+            startAssetIdSelect.innerHTML = '<option value="">Select Start Asset ID</option>';
+            endAssetIdSelect.innerHTML = '<option value="">Select End Asset ID</option>';
+
+            sortedAssetIds.forEach(assetId => {
+                const option1 = document.createElement('option');
+                option1.value = assetId;
+                option1.textContent = assetId;
+                startAssetIdSelect.appendChild(option1);
+
+                const option2 = document.createElement('option');
+                option2.value = assetId;
+                option2.textContent = assetId;
+                endAssetIdSelect.appendChild(option2);
+            });
+        }
+
+        function updateEndAssetIdOptions() {
+            const startAssetId = document.getElementById('startAssetIdSelect').value;
+            const endAssetIdSelect = document.getElementById('endAssetIdSelect');
+
+            endAssetIdSelect.innerHTML = '<option value="">Select End Asset ID</option>';
+
+            sortedAssetIds.forEach(assetId => {
+                if (!startAssetId || assetId >= startAssetId) {
+                    const option = document.createElement('option');
+                    option.value = assetId;
+                    option.textContent = assetId;
+                    endAssetIdSelect.appendChild(option);
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>
