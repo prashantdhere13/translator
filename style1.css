@@ -1,0 +1,23 @@
+/* General table styles */
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left; /* Default text alignment */
+}
+
+/* Right-to-left (RTL) style for Arabic */
+.rtl {
+    direction: rtl;      /* Set text direction to right-to-left */
+    text-align: right;    /* Align text to the right */
+}
+
+/* Left-to-right (LTR) style for other languages */
+.ltr {
+    direction: ltr;      /* Set text direction to left-to-right */
+    text-align: left;     /* Align text to the left */
+}
